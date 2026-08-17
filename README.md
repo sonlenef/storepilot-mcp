@@ -72,20 +72,22 @@ checks every step and prints the exact fix.
 Requires Python 3.11+.
 
 ```bash
-git clone https://github.com/sonlenef/storepilot-mcp
-cd storepilot-mcp
-python3 -m venv .venv && .venv/bin/pip install -e .
+uvx storepilot          # no install; uv fetches it per run
 ```
 
-That puts the server binary at `.venv/bin/storepilot`. Every client config below
-wants the absolute path to it.
+or install it:
 
-Not yet on PyPI, so `pip install storepilot` does not work yet.
+```bash
+pipx install storepilot   # or: pip install storepilot
+```
+
+Either way you get a `storepilot` binary. Every client config below wants its
+absolute path — `which storepilot` prints it.
 
 ### Claude Code
 
 ```bash
-claude mcp add storepilot -- /absolute/path/to/storepilot-mcp/.venv/bin/storepilot
+claude mcp add storepilot -- storepilot
 ```
 
 ### Claude Desktop / any MCP client
@@ -96,7 +98,7 @@ claude mcp add storepilot -- /absolute/path/to/storepilot-mcp/.venv/bin/storepil
 {
   "mcpServers": {
     "storepilot": {
-      "command": "/absolute/path/to/storepilot-mcp/.venv/bin/storepilot",
+      "command": "/absolute/path/to/storepilot",
       "env": {
         "STOREPILOT_GOOGLE_CREDENTIALS": "/path/to/service-account.json",
         "STOREPILOT_GOOGLE_REPORTS_BUCKET": "pubsite_prod_rev_0123456789",
@@ -118,7 +120,7 @@ Settings → MCP → Add new MCP server, or add to `~/.cursor/mcp.json`:
 {
   "mcpServers": {
     "storepilot": {
-      "command": "/absolute/path/to/storepilot-mcp/.venv/bin/storepilot",
+      "command": "/absolute/path/to/storepilot",
       "env": { "STOREPILOT_ASC_KEY_PATH": "/path/to/AuthKey_XXXXXXXXXX.p8" }
     }
   }
@@ -131,7 +133,7 @@ Add to `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.storepilot]
-command = "/absolute/path/to/storepilot-mcp/.venv/bin/storepilot"
+command = "/absolute/path/to/storepilot"
 env = { STOREPILOT_ASC_KEY_PATH = "/path/to/AuthKey_XXXXXXXXXX.p8" }
 ```
 
