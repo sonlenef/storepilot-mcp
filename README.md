@@ -1,5 +1,9 @@
 # StorePilot
 
+[![CI](https://github.com/sonlenef/storepilot-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/sonlenef/storepilot-mcp/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
+
 One MCP server for a whole app portfolio, across Google Play and the App Store.
 
 Ask your assistant:

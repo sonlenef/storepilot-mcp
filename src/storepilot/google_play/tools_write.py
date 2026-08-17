@@ -779,12 +779,16 @@ def halt_rollout(package_name: str, track: str = "production") -> str:
             status = str(live.get("status"))
             if status == "halted":
                 edit.discard()
+                # Without this the surrounding unguarded() context closes as
+                # "executed", and the audit log would claim a halt happened.
+                audit(op, outcome="blocked", detail="release already halted")
                 return append_warning(
                     f"[no-op] The release on '{resolved}' is already halted "
                     f"({describe_release(live)}). Nothing was changed."
                 )
             if status == "completed":
                 edit.discard()
+                audit(op, outcome="blocked", detail="release is completed; Play offers no halt")
                 return append_warning(
                     f"[cannot-halt] The release on '{resolved}' is 'completed' — it is already at "
                     f"100% of users and Play offers no halt for it "

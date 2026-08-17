@@ -277,7 +277,9 @@ def register(mcp: MCPServer) -> None:
                 if reading.user_weighted:
                     detail.append("user-weighted")
                 if reading.distinct_users:
-                    detail.append(f"~{_number(reading.distinct_users)} distinct users")
+                    # The window is a rolling average but this count is the last
+                    # day's, so say which — unlabelled it reads as the whole sample.
+                    detail.append(f"~{_number(reading.distinct_users)} distinct users on the latest day")
                 if reading.latest_covered_day:
                     detail.append(f"through {reading.latest_covered_day.isoformat()}")
                 lines.append(f"  ({', '.join(detail)})")
