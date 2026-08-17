@@ -1,6 +1,6 @@
 [project]
 name = "storepilot"
-version = "0.1.0"
+version = "0.1.1"
 description = "StorePilot — one MCP server to run your entire app portfolio across Google Play and the App Store"
 readme = "README.md"
 requires-python = ">=3.11"

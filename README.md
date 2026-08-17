@@ -400,6 +400,12 @@ and reporting what breaks — particularly an account with an app large enough t
 Android Vitals reports data, which the test account was not. See
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## MCP Registry
+
+Published as `io.github.sonlenef/storepilot-mcp`.
+
+mcp-name: io.github.sonlenef/storepilot-mcp
+
 ## License
 
 MIT
