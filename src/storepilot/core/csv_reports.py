@@ -339,6 +339,23 @@ def report_freshness(
             )
         return Freshness(as_of=today, requested_period=period, source=SOURCE, is_complete=True)
 
+    if first > today:
+        # A month that has not started yet. "Still filling in" would be a wildly
+        # optimistic description of a report that cannot exist, and a caller
+        # reading a zero total needs to know the difference.
+        return Freshness(
+            as_of=None,
+            requested_period=period,
+            source=SOURCE,
+            lag_days=(first - today).days,
+            is_complete=False,
+            caveat=(
+                f"{period} has not started yet ({first.isoformat()} is in the future), so no "
+                f"{kind.value} data exists for it. Any total shown is the absence of a report, "
+                f"not a measurement."
+            ),
+        )
+
     complete_after = last + timedelta(days=STATS_LAG_DAYS)
     if today <= complete_after:
         covered_through = min(last, today - timedelta(days=3))
@@ -550,6 +567,21 @@ def parse_crashes(
     )
 
 
+def belongs_to_package(product_id: str, package_name: str) -> bool:
+    """True when an earnings row's product id belongs to ``package_name``.
+
+    The product id is the package for an app sale and ``<package>.<sku>`` for an
+    in-app product, so a prefix test is needed — but it has to stop at a segment
+    boundary. A bare ``startswith`` attributes ``com.acme.freemium``'s revenue to
+    ``com.acme.free``, which is a wrong money answer that looks entirely
+    plausible. Only ``.`` and ``:`` count as boundaries; both appear as SKU
+    separators, and neither can occur inside a package segment.
+    """
+    if product_id == package_name:
+        return True
+    return product_id.startswith((f"{package_name}.", f"{package_name}:"))
+
+
 _EARNINGS_AMOUNT_COLUMNS = (
     "Amount (Merchant Currency)",
     "Merchant Amount",
@@ -599,7 +631,7 @@ def parse_earnings(
         if value is None:
             continue
         app_id = raw.get(product_column or "") or "account"
-        if package_name and not app_id.startswith(package_name):
+        if package_name and not belongs_to_package(app_id, package_name):
             continue
         period = parse_date(raw.get(date_column or "")) or month_bounds(month)[0]
         rows.append(

@@ -18,7 +18,7 @@ on its own, and the cross-store tools register as soon as either store works.
 ```bash
 git clone https://github.com/sonlenef/storepilot-mcp
 cd storepilot-mcp
-python -m venv .venv && .venv/bin/pip install -e .
+python3 -m venv .venv && .venv/bin/pip install -e .
 cp .env.example .env
 ```
 
@@ -34,9 +34,10 @@ runs.
 
 ## Google Play
 
-Five things must all be true, and they fail in different places: Google Cloud
-(APIs and IAM), Play Console (permissions), and the reports bucket (IAM again,
-not Play Console).
+Things must be true in two different systems, and they fail in different places:
+Google Cloud (the two APIs must be enabled, and the service account lives there)
+and Play Console (every permission, including the one that unlocks the reports
+bucket).
 
 ### Step 1 — Google Cloud project and a service account
 
@@ -80,16 +81,20 @@ Copy that email. The next step needs it.
 Play Console → **Users and permissions** → **Invite new users** → paste the
 service account email from Step 1.
 
-Grant these **app permissions**, spelled exactly as Play Console spells them:
+Play Console splits permissions into two tabs, and the split matters — see Step 3.
+Grant these, spelled exactly as Play Console spells them:
 
-| Permission | Needed for |
-|---|---|
-| **View app information and download bulk reports (read-only)** | `play_list_apps`, vitals, anomalies, everything read |
-| **View financial data, orders, and cancellation survey responses** | `play_get_earnings` |
-| **Reply to reviews** | `play_list_reviews` **and** `play_reply_review` |
-| **Release apps to testing tracks** / **Release to production…** | the write tools, per track |
+| Tab | Permission | Needed for |
+|---|---|---|
+| App permissions | **View app information and download bulk reports (read-only)** | `play_list_apps`, vitals, anomalies, everything read |
+| App permissions | **Reply to reviews** | `play_list_reviews` **and** `play_reply_review` |
+| App permissions | **Release apps to testing tracks** / **Release to production…** | the write tools, per track |
+| Account permissions | **View app information and download bulk reports (read-only)** | the reports bucket: installs, ratings, earnings |
+| Account permissions | **View financial data, orders, and cancellation survey responses** | `play_get_earnings` |
 
-Permission changes can take a few minutes to apply.
+The same permission name appears on both tabs and they are not the same grant.
+Ticking it per app covers the APIs; only the account-level tick reaches the
+reports bucket. Permission changes can take a few minutes to apply.
 
 #### The "Reply to reviews" trap
 
@@ -111,7 +116,7 @@ API will tell you your app has no reviews, forever, and be wrong.
 `play_list_reviews` says the same thing rather than claiming there are no
 reviews. Grant the permission and the ambiguity disappears.
 
-**Check:** `setup_doctor`. You want four green lines:
+**Check:** `setup_doctor`. You want three green lines:
 
 ```
 [ok] Android Publisher API: reachable, queried com.example.app
@@ -148,14 +153,26 @@ install figure reads "n/a".
    STOREPILOT_GOOGLE_REPORTS_BUCKET=pubsite_prod_rev_0123456789
    ```
 
-4. **Grant bucket access in Google Cloud, not Play Console.** This is the step
-   everyone misses. Google Cloud Console → **Cloud Storage** → that bucket →
-   **Permissions** → grant the service account email the **Storage Object
-   Viewer** role.
+4. **Grant bucket access in Play Console, not Google Cloud.** This is the step
+   everyone misses, and it is the opposite of what the 403 suggests. Play Console
+   → **Users and permissions** → the service account → the **Account
+   permissions** tab → tick **View app information and download bulk reports
+   (read-only)**, and **View financial data, orders, and cancellation survey
+   responses** if you want earnings.
 
-A 403 on this bucket is an IAM problem that no Play Console permission can fix,
-so StorePilot gives it a distinct remedy rather than folding it into "permission
-denied".
+Three things about that grant, each of which has cost somebody an afternoon:
+
+- **It is account-level, not app-level.** Ticking the identically named
+  permission for every app individually under **App permissions** does not unlock
+  the bucket.
+- **No Cloud Console IAM role helps.** The bucket lives in a Google-owned
+  project you cannot administer, so there is no "Permissions" tab there for you
+  to grant `Storage Object Viewer` on.
+- **It has no per-app scope.** Bulk reports cover every app in the account; you
+  cannot grant the bucket for one app.
+
+StorePilot gives a 403 here its own remedy rather than folding it into
+"permission denied", because the generic advice sends you to the wrong console.
 
 **Check:** `setup_doctor`.
 
@@ -205,14 +222,19 @@ lifetime exceeds 20 minutes, so tokens are minted for exactly that and refreshed
 after 15, leaving margin for clock skew — a long MCP session never carries a
 dead token.
 
-**Check:** `setup_doctor`. Three steps should turn green:
+**Check:** `setup_doctor`. The first three App Store steps should turn green:
 
 ```
 [ok] ASC credentials: loaded key XXXXXXXXXX (issuer 0000...) from /path/AuthKey_XXXXXXXXXX.p8
 [ok] ASC token: ES256 token minted (kid XXXXXXXXXX, aud appstoreconnect-v1,
      valid 1200s, auto-refreshed after 900s)
 [ok] ASC API reachable: GET /v1/apps returned 4 app(s): My App (com.example.app), ...
+[ok] ASC rate limit: 3598/3600 requests left this hour (100%)
 ```
+
+Two more lines follow: **ASC sales access** (Step 5) and **ASC write guards**,
+which reports whether the audit log is landing. Both are expected to warn until
+you finish Step 5.
 
 If **ASC API reachable** returns zero apps, the key works but sees nothing:
 confirm its role includes app access and that it belongs to the team that owns
@@ -311,8 +333,9 @@ report does not exist yet. StorePilot says "not published" rather than reporting
 0 — those are different facts.
 
 **Installs and revenue read `no-bucket`.** Step 3 is incomplete. The bucket id
-and the Storage Object Viewer IAM grant are two separate things and both are
-required.
+and the account-level Play Console grant are two separate things and both are
+required. If you granted permissions app by app, that is the usual cause: it has
+to be the **Account permissions** tab.
 
 **Vitals read `suppressed`.** Google suppresses Android Vitals entirely for apps
 below a minimum daily user count. For a low-traffic app, "no data" does not mean

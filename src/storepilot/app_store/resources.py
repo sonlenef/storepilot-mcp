@@ -53,6 +53,10 @@ TRACK_TESTFLIGHT = "testflight"
 
 #: Apple's fixed phased-release ladder. The API reports only ``currentDayNumber``,
 #: so the audience share has to be looked up rather than read.
+#: UNVERIFIED against a live phased release: these percentages are Apple's
+#: published ladder. They are shown to users as "N% of users" in asc_list_versions
+#: and portfolio_overview, so a change to the ladder would silently misstate the
+#: audience of every in-flight iOS rollout.
 PHASED_RELEASE_FRACTIONS: dict[int, float] = {
     1: 0.01,
     2: 0.02,
@@ -378,7 +382,10 @@ def to_release(result: PagedResult, app_id: str, resource: Mapping[str, Any]) ->
         # Live, but only to a slice of users — the cross-store view must not
         # show this as a finished rollout next to a Play staged release.
         status = ReleaseStatus.IN_PROGRESS
-    if attrs(phased).get("phasedReleaseState", "").upper() == "PAUSED":
+    # `or ""` rather than a default: Apple sends the key with a null value on a
+    # phased release that has not started, and `None.upper()` would take down the
+    # whole version listing.
+    if str(attrs(phased).get("phasedReleaseState") or "").upper() == "PAUSED":
         status = ReleaseStatus.HALTED
 
     build = result.related_one(resource, "build")
@@ -667,6 +674,11 @@ def to_review(result: PagedResult, app_id: str, resource: Mapping[str, Any]) -> 
         rating=int(a.get("rating") or 0),
         text=text,
         author=untrusted(a.get("reviewerNickname"), limit=60) or None,
+        # createdDate, not a modification date: Apple exposes no "edited at" on a
+        # customerReview. The shared model calls the field updated_at because the
+        # Play side really is a last-modified timestamp, so a cross-store review
+        # comparison is comparing "written" against "last edited". Close enough to
+        # sort by, not close enough to reason about an edit from.
         updated_at=parse_datetime(a.get("createdDate")),
         has_developer_reply=response is not None,
     )
@@ -742,10 +754,21 @@ def delete_review_response(client: AscClient, response_id: str) -> None:
 
 
 def get_phased_release(client: AscClient, version_id: str) -> dict[str, Any] | None:
-    payload = client.get_json(
-        f"/v1/appStoreVersions/{version_id}/appStoreVersionPhasedRelease",
-        context=f"reading phased release for version {version_id}",
-    )
+    """The version's phased release, or None when it has none.
+
+    A version with no phased release is a normal state, not a failure. Apple is
+    inconsistent about how it says so — ``200`` with ``data: null`` on some
+    accounts, ``404`` on others — so both are folded into None. Letting the 404
+    escape would abort a submission at the phased-release step, after the caller
+    already confirmed it.
+    """
+    try:
+        payload = client.get_json(
+            f"/v1/appStoreVersions/{version_id}/appStoreVersionPhasedRelease",
+            context=f"reading phased release for version {version_id}",
+        )
+    except NotFoundError:
+        return None
     data = payload.get("data")
     return data if isinstance(data, dict) else None
 
@@ -756,6 +779,13 @@ def enable_phased_release(client: AscClient, version_id: str) -> dict[str, Any]:
     Enabled by default before submission: an unphased release puts a bad build
     in front of the entire install base at once, with no equivalent of Play's
     staged rollout to fall back on.
+
+    UNVERIFIED: creating the resource with ``phasedReleaseState: INACTIVE`` and
+    relying on Apple to move it to ACTIVE when the version goes live is
+    documented behaviour that has not been confirmed against a live account. If
+    a real submission ships to 100% at once despite this call succeeding, this
+    is the assumption that broke, and the fix is to PATCH the phased release to
+    ACTIVE after approval rather than at creation.
     """
     return client.post(
         "/v1/appStoreVersionPhasedReleases",

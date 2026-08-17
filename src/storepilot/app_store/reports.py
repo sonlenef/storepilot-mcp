@@ -190,6 +190,14 @@ def parse_sales_report(
 
     Refunds arrive as negative unit counts and are left signed, so summing gives
     net rather than gross.
+
+    UNVERIFIED: the column names below ("Apple Identifier", "Units", "Developer
+    Proceeds", "Currency of Proceeds", "Begin Date", "Country Code") are taken
+    from Apple's published SALES/SUMMARY 1_1 layout and have not been checked
+    against a live report on this codebase. If Apple renames one, the row is
+    dropped silently rather than erroring — a missing "Units" column yields a
+    report with no unit rows, not a failure. Treat a report that parses to zero
+    rows while ``fetch_sales_report`` returned bytes as a column-rename suspect.
     """
     rows: list[ReportRow] = []
     for record in iter_tsv(data):
@@ -258,6 +266,12 @@ def normalize_report_date(report_date: str, frequency: Frequency) -> str:
     Apple's 400 for a mismatched format does not mention the format, so this is
     checked locally. Each frequency wants a different granularity, and WEEKLY in
     particular wants the **Sunday that ends** the week — a Monday is rejected.
+
+    UNVERIFIED, and the strictest rule here: the WEEKLY "must be a Sunday" check
+    is documented behaviour that has not been confirmed against a live account.
+    It is the only check in this module that *refuses input Apple might accept*,
+    so if a user reports a rejected Wednesday that App Store Connect itself
+    allows, relax this to a warning rather than debugging Apple.
     """
     text = report_date.strip()
     if frequency is Frequency.YEARLY:
@@ -795,6 +809,14 @@ def advance_analytics(
 
     Never blocks and never polls. Each level that is empty terminates the walk
     and returns the stage, so the caller knows whether to wait a day or a minute.
+
+    UNVERIFIED: the attribute names this walk keys on — ``stoppedDueToInactivity``
+    on a request, ``processingDate`` on an instance, ``url``/``checksum`` on a
+    segment — come from Apple's documentation and have not been seen on a live
+    response. Each one fails *soft*: a renamed ``stoppedDueToInactivity`` makes a
+    stopped request look active, and a renamed ``processingDate`` picks an
+    arbitrary instance rather than the newest. Neither errors, so a stage that
+    never advances is the symptom to look for.
     """
     category = category.upper()
     granularity = granularity.upper()
@@ -934,6 +956,12 @@ def download_segments(
     """
     cache = _cache()
     rows: list[ReportRow] = []
+    as_of: date | None = None
+    if instance_date:
+        try:
+            as_of = datetime.strptime(instance_date[:10], "%Y-%m-%d").date()  # noqa: DTZ007
+        except ValueError:
+            as_of = None
     for segment in segments:
         url = segment.get("url")
         if not url:
@@ -945,14 +973,7 @@ def download_segments(
             return client.download(target)
 
         payload = cache.get_or_fetch(key, fetch, FOREVER) if checksum else fetch()
-        rows.extend(parse_analytics_segment(payload, app_id=app_id))
-
-    as_of = None
-    if instance_date:
-        try:
-            as_of = datetime.strptime(instance_date[:10], "%Y-%m-%d").date()  # noqa: DTZ007
-        except ValueError:
-            as_of = None
+        rows.extend(parse_analytics_segment(payload, app_id=app_id, fallback_period=as_of))
 
     return Report(
         rows=rows,
@@ -989,21 +1010,30 @@ _ANALYTICS_DIMENSION_HINTS = (
 )
 
 
-def parse_analytics_segment(data: bytes, *, app_id: str) -> list[ReportRow]:
+def parse_analytics_segment(
+    data: bytes, *, app_id: str, fallback_period: date | None = None
+) -> list[ReportRow]:
     """Parse an analytics segment TSV generically.
 
     The column set differs per report and Apple adds reports over time, so this
     resolves structurally rather than against a fixed schema: one date column,
     known dimension columns, and every remaining numeric column as a metric.
     A hard-coded schema would silently drop new metrics instead of surfacing them.
+
+    ``fallback_period`` is the instance's processing date, used when a segment
+    carries no recognised date column. Stamping such rows with *today* — the old
+    behaviour — silently backdates or post-dates every figure in the report, and
+    a row dated today that describes last week is indistinguishable from a fresh
+    one. Mirrors ``parse_sales_report``'s ``fallback_period`` for the same reason.
     """
     rows: list[ReportRow] = []
+    default_period = fallback_period or datetime.now(UTC).date()
     for record in iter_tsv(data):
         date_key = next(
             (k for k in record if k in _ANALYTICS_DATE_COLUMNS),
             None,
         )
-        period = _to_date(record.get(date_key or "")) or datetime.now(UTC).date()
+        period = _to_date(record.get(date_key or "")) or default_period
 
         dimension: str | None = None
         dimension_value: str | None = None

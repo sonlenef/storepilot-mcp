@@ -5,7 +5,7 @@
 ```bash
 git clone https://github.com/sonlenef/storepilot-mcp
 cd storepilot-mcp
-python -m venv .venv && .venv/bin/pip install -e ".[dev]"
+python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/pytest        # 503 tests, no network, no credentials
 .venv/bin/ruff check .
 ```

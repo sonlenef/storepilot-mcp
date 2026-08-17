@@ -25,6 +25,9 @@ audited.
 
 ### Fixed before release, from the first live runs
 
+The first read-only runs against real accounts on both stores found three things
+no fixture could have:
+
 - Apple rejects `sort` on the `appStoreVersions` relationship endpoint, which
   made `asc_list_versions` fail outright. Ordering is now client-side and
   compares version components numerically, so `1.10.0` sorts above `1.9.0`.
@@ -34,6 +37,9 @@ audited.
 - Bucket access is an account-level Play Console permission. The 403 remedy used
   to send users to Cloud Console IAM, for a bucket in a Google-owned project they
   cannot administer.
+
+### Fixed before release, from review
+
 - Production ignored an explicit `status="halted"` and returned a live rollout at
   the default 10%.
 - Every tool handed the model bare parameter names. The SDK does not read an

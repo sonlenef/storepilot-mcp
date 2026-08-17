@@ -701,9 +701,14 @@ def expand_rollout(
                 "The release is currently HALTED. Widening it resumes serving the build that "
                 "was stopped — make sure the reason it was halted has been fixed."
             )
+        # A halted release can come back with userFraction 0.0, so the ratio is
+        # computed against a floor in BOTH the test and the message — dividing by
+        # the raw value here used to raise ZeroDivisionError while previewing the
+        # resumption of a halted rollout, i.e. exactly during an incident.
         if before is not None and user_fraction / max(before, 0.001) >= 4:
+            jump = user_fraction / max(before, 0.001)
             warnings.append(
-                f"That is a {user_fraction / before:.0f}x jump in one step. Doubling is the usual "
+                f"That is a {jump:.0f}x jump in one step. Doubling is the usual "
                 f"increment; a large jump gives you much less time to spot a regression."
             )
         return Preview(

@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
   "name": "io.github.sonlenef/storepilot-mcp",
-  "description": "Run a whole app portfolio across Google Play and the App Store: vitals, reviews, installs, earnings, releases and cross-store parity.",
+  "description": "Run an app portfolio across Google Play and the App Store: vitals, reviews, earnings, releases.",
   "repository": {
     "url": "https://github.com/sonlenef/storepilot-mcp",
     "source": "github"

@@ -672,9 +672,15 @@ def _vitals_freshness(
             "metrics for apps below a minimum daily user count, so this is expected for "
             "a low-traffic app and does not mean the app is crash-free."
         )
+    # The queried interval is half-open, [end_exclusive - days, end_exclusive),
+    # and period_end is end_exclusive - 1 day. So the INCLUSIVE window actually
+    # covered is period_end - (days - 1) .. period_end: subtracting a full `days`
+    # here reported a 29-day window for a 28-day query, one day earlier than
+    # anything that was measured.
+    window_start = period_end - timedelta(days=days - 1)
     return Freshness(
         as_of=period_end,
-        requested_period=f"{(period_end - timedelta(days=days)).isoformat()}..{period_end.isoformat()}",
+        requested_period=f"{window_start.isoformat()}..{period_end.isoformat()}",
         source=SOURCE,
         lag_days=lag,
         is_complete=not caveats,

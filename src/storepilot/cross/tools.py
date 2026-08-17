@@ -126,6 +126,58 @@ DESTRUCTIVE = ToolAnnotations(
 _PLAY = Store.GOOGLE_PLAY.value
 _APPLE = Store.APP_STORE.value
 
+# --- Parameter schema --------------------------------------------------------
+#
+# Descriptions reach the model ONLY through Field(description=...); the SDK does
+# not parse an "Args:" docstring section. `app` matters most: it is a registry
+# key, not a store id, and a model that passes a package name to a tool expecting
+# a key gets a confusing "no registered app matches" instead of an answer.
+
+AppKey = Annotated[
+    str,
+    Field(
+        description=(
+            "Which registered app: its apps.toml key, display name, Play package name or "
+            "Apple ID. Empty works only when exactly one app is registered."
+        )
+    ),
+]
+MonthArg = Annotated[
+    str,
+    Field(
+        description=(
+            "Month for revenue, installs and rating, as 'YYYY-MM'. Empty means the last "
+            "COMPLETE month, because the current one is always partial."
+        )
+    ),
+]
+StoreArg = Annotated[
+    str,
+    Field(
+        description=(
+            "Which store to act on: 'both' (default), 'play' or 'ios'."
+        )
+    ),
+]
+LocalesArg = Annotated[
+    str,
+    Field(
+        description=(
+            "Comma-separated locale codes as each store spells them, e.g. 'en-US,vi'. "
+            "Empty means every locale found."
+        )
+    ),
+]
+MetadataDirArg = Annotated[
+    str,
+    Field(
+        description=(
+            "Root of the fastlane-layout metadata tree. Empty uses the app's metadata_dir "
+            "from apps.toml, otherwise ~/.storepilot/metadata/<key>."
+        )
+    ),
+]
+
 
 # --- Formatting --------------------------------------------------------------
 
@@ -720,19 +772,19 @@ def _play_earnings_index(report: Report, packages: set[str]) -> tuple[
     known package is reported as unattributed rather than dropped (which would
     understate revenue) or spread around (which would invent it).
     """
+    from storepilot.core.csv_reports import belongs_to_package
+
     per_app: dict[str, dict[str, float]] = {}
     unattributed: dict[str, float] = {}
+    # Longest package first: com.acme.todo.pro must win over com.acme.todo when
+    # both are registered and a product id could plausibly belong to either.
     ordered = sorted(packages, key=len, reverse=True)
     for row in report.rows:
         if row.metric != "earnings":
             continue
         currency = row.currency or "unknown"
         owner = next(
-            (
-                pkg
-                for pkg in ordered
-                if row.app_id == pkg or row.app_id.startswith(pkg + ".") or row.app_id.startswith(pkg + ":")
-            ),
+            (pkg for pkg in ordered if belongs_to_package(row.app_id, pkg)),
             None,
         )
         if owner is None:
@@ -1185,6 +1237,17 @@ def render_portfolio(portfolio: Portfolio) -> str:
             f"ANR {ANR_RATE_THRESHOLD_PERCENT}% ('!' marks a breach)."
         ),
     ]
+    if any(Store.APP_STORE in item.rows for item in portfolio.apps):
+        # The column holds two different measurements. Play's is device installs
+        # from the stats report; Apple's is sales UNITS, which counts first-time
+        # downloads and re-downloads differently. Reading one row against the
+        # other as if they were the same metric is a wrong comparison, so the
+        # table says which is which rather than leaving the header to imply it.
+        lines.append(
+            "Installs column: Google Play rows are device installs; App Store rows are "
+            "Apple sales UNITS. The two are not the same measurement — compare each store "
+            "against its own history, not against the other."
+        )
     lines.extend(_freshness_lines(portfolio.freshness))
     lines.append("")
 
@@ -2853,18 +2916,24 @@ def register(mcp: MCPServer) -> None:
     """
 
     @mcp.tool(name="portfolio_overview", annotations=READ_ONLY)
-    def portfolio_overview_tool(month: str = "", days: int = 28) -> str:
+    def portfolio_overview_tool(
+        month: MonthArg = "",
+        days: Annotated[
+            int,
+            Field(
+                description=(
+                    "Android Vitals window in days; 28 (the default) matches Play Console. "
+                    "Applies to Google Play only — Apple publishes no crash rate."
+                )
+            ),
+        ] = 28,
+    ) -> str:
         """EVERY app on BOTH stores in one table. Start here for any portfolio question.
 
         Answers "how is my portfolio doing?" in a single call: live version and
         track, staged-rollout share, rating, installs, revenue with its currency,
         and crash/ANR against Google's thresholds — for every Google Play app and
         every App Store app, joined by the pairing registry.
-
-        Args:
-            month: revenue/installs/rating month as "YYYY-MM". Defaults to the
-                last COMPLETE month, because the current one is always partial.
-            days: Android Vitals window; 28 (default) matches Play Console.
 
         Degrades rather than failing: one app's missing permission, or a store
         that is not configured at all, shrinks the table instead of emptying it,
@@ -2880,14 +2949,20 @@ def register(mcp: MCPServer) -> None:
         return _boundary(portfolio_overview, month, days)
 
     @mcp.tool(name="compare_reviews", annotations=READ_ONLY)
-    def compare_reviews_tool(app: str = "", days: int = 30, limit: int = 50) -> str:
+    def compare_reviews_tool(
+        app: AppKey = "",
+        days: Annotated[
+            int,
+            Field(
+                description=(
+                    "How far back to keep App Store reviews. It does NOT widen the Play "
+                    "side: Google returns roughly the last 7 days whatever this says."
+                )
+            ),
+        ] = 30,
+        limit: Annotated[int, Field(description="Maximum reviews per store.")] = 50,
+    ) -> str:
         """Reviews for one paired app from BOTH stores, grouped for comparison.
-
-        Args:
-            app: registry key, name, package name or Apple ID. Leave empty when
-                only one app is registered.
-            days: how far back to keep App Store reviews.
-            limit: maximum reviews per store.
 
         Returns a rating-distribution table for the two stores side by side and
         then the review texts themselves, labelled by store and grouped by
@@ -2902,15 +2977,29 @@ def register(mcp: MCPServer) -> None:
         return _boundary(compare_reviews, app, days, limit)
 
     @mcp.tool(name="parity_check", annotations=READ_ONLY)
-    def parity_check_tool(app: str = "", locale: str = "") -> str:
+    def parity_check_tool(
+        app: Annotated[
+            str,
+            Field(
+                description=(
+                    "Which registered app: apps.toml key, display name, Play package or "
+                    "Apple ID. Empty checks every app paired across both stores."
+                )
+            ),
+        ] = "",
+        locale: Annotated[
+            str,
+            Field(
+                description=(
+                    "Listing locale to compare, spelled as GOOGLE PLAY spells it (e.g. "
+                    "'en-US', 'vi', 'zh-TW'). The App Store equivalent is derived, since "
+                    "the stores disagree on some codes. Empty uses the app's first "
+                    "registered locale, otherwise en-US."
+                )
+            ),
+        ] = "",
+    ) -> str:
         """Find drift between a paired app's two store listings.
-
-        Args:
-            app: registry key, name, package or Apple ID. Empty checks every
-                paired app.
-            locale: which listing locale to compare, as Play spells it (e.g.
-                "en-US", "vi"). The App Store equivalent is derived — the stores
-                disagree on some codes, Play's "zh-TW" being Apple's "zh-Hant".
 
         Reports DIFFERENCES only: live version, rollout state, and the listing
         fields that exist on both stores (title/name, short description/subtitle,
@@ -2978,17 +3067,12 @@ def register(mcp: MCPServer) -> None:
 
     @mcp.tool(name="metadata_pull", annotations=LOCAL_WRITE)
     def metadata_pull_tool(
-        app: str = "", store: str = "both", locales: str = "", metadata_dir: str = ""
+        app: AppKey = "",
+        store: StoreArg = "both",
+        locales: LocalesArg = "",
+        metadata_dir: MetadataDirArg = "",
     ) -> str:
         """Download store listing copy into a fastlane-compatible local tree.
-
-        Args:
-            app: registry key, name, package or Apple ID.
-            store: "both" (default), "play" or "ios".
-            locales: comma-separated locales; empty means every locale the store
-                has.
-            metadata_dir: where to write. Defaults to the app's metadata_dir in
-                the registry, otherwise ~/.storepilot/metadata/<key>.
 
         Writes exactly fastlane's layout — metadata/android/<locale>/title.txt,
         short_description.txt, full_description.txt, changelogs/<versionCode>.txt
@@ -3002,10 +3086,23 @@ def register(mcp: MCPServer) -> None:
 
     @mcp.tool(name="metadata_push", annotations=WRITE)
     def metadata_push_tool(
-        app: Annotated[str, Field(description="Pair key from apps.toml. Empty pushes every registered app.")] = "",
-        store: Annotated[str, Field(description="Which store to write: play, appstore or both.")] = "both",
+        # "Empty pushes every registered app" was wrong: an empty `app` resolves
+        # to the ONLY registered app and errors when there is more than one. A
+        # model that believed the old text would have expected a portfolio-wide
+        # publish and got a validation error instead.
+        app: Annotated[
+            str,
+            Field(
+                description=(
+                    "Which registered app: apps.toml key, display name, Play package or "
+                    "Apple ID. Empty works only when exactly one app is registered — this "
+                    "tool never pushes to several apps at once."
+                )
+            ),
+        ] = "",
+        store: StoreArg = "both",
         locales: Annotated[str, Field(description="Comma-separated locales to push. Empty pushes every locale found on disk.")] = "",
-        metadata_dir: Annotated[str, Field(description="Root of the fastlane-layout metadata tree. Empty uses the path in apps.toml.")] = "",
+        metadata_dir: MetadataDirArg = "",
         confirm: Annotated[bool, Field(description="Leave False to get a preview and a confirmation_token. Set True only on the second call, after a human has seen that preview.")] = False,
         confirmation_token: Annotated[str | None, Field(description="The confirmation_token from the preview, passed back unchanged. Bound to the exact arguments previewed and single-use. Never invent one.")] = None,
     ) -> str:
@@ -3062,25 +3159,37 @@ def register(mcp: MCPServer) -> None:
 
     @mcp.tool(name="pair_apps", annotations=LOCAL_WRITE)
     def pair_apps_tool(
-        key: str = "",
-        play: str = "",
-        appstore: str = "",
-        name: str = "",
-        bundle_id: str = "",
-        metadata_dir: str = "",
-        locales: str = "",
+        key: Annotated[
+            str,
+            Field(
+                description=(
+                    "Short registry key for this app, e.g. 'acme-todo'. Derived from the "
+                    "name or package when omitted."
+                )
+            ),
+        ] = "",
+        play: Annotated[
+            str, Field(description="Google Play package name, e.g. 'com.acme.todo'.")
+        ] = "",
+        appstore: Annotated[
+            str,
+            Field(
+                description=(
+                    "Numeric Apple ID, e.g. '1234567890'. NOT the bundle id — that goes in "
+                    "bundle_id."
+                )
+            ),
+        ] = "",
+        name: Annotated[
+            str, Field(description="Display name used in cross-store output.")
+        ] = "",
+        bundle_id: Annotated[
+            str, Field(description="iOS bundle id, which improves future auto-pairing.")
+        ] = "",
+        metadata_dir: MetadataDirArg = "",
+        locales: LocalesArg = "",
     ) -> str:
         """Write one app into the pairing registry, creating or extending its entry.
-
-        Args:
-            key: short registry key, e.g. "acme-todo". Derived from the name if
-                omitted.
-            play: Google Play package name, e.g. "com.acme.todo".
-            appstore: numeric Apple ID, e.g. "1234567890" (NOT the bundle id).
-            name: display name used in cross-store output.
-            bundle_id: iOS bundle id, which helps future auto-pairing.
-            metadata_dir: where this app's fastlane metadata tree lives.
-            locales: comma-separated default locales for the metadata tools.
 
         Passing only one store id is valid and registers a single-store app.
         Calling this again for the same app extends the existing entry rather

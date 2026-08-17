@@ -296,13 +296,28 @@ def get_earnings(
         rows.extend(report.rows)
         used.append(name)
 
-    return Report(
-        rows=rows,
-        freshness=csv_reports.report_freshness(
-            ReportKind.EARNINGS, month, today=today, row_count=len(rows)
-        ),
-        source_object=", ".join(used),
+    freshness = csv_reports.report_freshness(
+        ReportKind.EARNINGS, month, today=today, row_count=len(rows)
     )
+    if len(names) > MAX_EARNINGS_OBJECTS:
+        # Silently summing the first N objects would under-report revenue by
+        # whatever the skipped ones hold, and the total would look perfectly
+        # ordinary. Say it out loud instead.
+        skipped = len(names) - MAX_EARNINGS_OBJECTS
+        truncation_caveat = (
+            f"{len(names)} earnings objects matched this month's prefix and only the first "
+            f"{MAX_EARNINGS_OBJECTS} were read — the totals below EXCLUDE {skipped} file(s) "
+            f"and are therefore too low. Google normally writes one object per month, so "
+            f"this usually means the prefix is matching more than it should."
+        )
+        freshness = freshness.model_copy(
+            update={
+                "is_complete": False,
+                "caveat": " ".join(filter(None, [freshness.caveat, truncation_caveat])),
+            }
+        )
+
+    return Report(rows=rows, freshness=freshness, source_object=", ".join(used))
 
 
 def earnings_by_currency(report: Report) -> dict[str, float]:

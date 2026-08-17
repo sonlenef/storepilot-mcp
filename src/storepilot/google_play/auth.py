@@ -18,6 +18,7 @@ from typing import Any
 
 from storepilot.config import settings
 from storepilot.core.errors import (
+    DOCS_PLAY_API_ACCESS,
     DOCS_PLAY_GETTING_STARTED,
     DOCS_PLAY_PERMISSIONS,
     ApiNotEnabledError,
@@ -27,6 +28,7 @@ from storepilot.core.errors import (
     StorePermissionError,
     StorePilotError,
     UpstreamError,
+    ValidationError,
     redact_path,
 )
 
@@ -375,6 +377,26 @@ def classify_google_error(
                 "been published."
             ),
             details={"service_account": email},
+        )
+
+    if status in (400, 409, 412):
+        # Without this a Play 400 fell through to UpstreamError, whose remedy is
+        # "retry once" — advice that can never work for a malformed request and
+        # that contradicts the App Store adapter, where 400/409 is a
+        # ValidationError naming the offending field. Same status, same class of
+        # problem, so the same answer.
+        return ValidationError(
+            f"Google rejected the request while {context}{target}: {body[:300]}",
+            remedy=(
+                "This is a malformed or not-currently-allowed request, not a transient "
+                "failure — retrying sends the identical request. Common causes: a version "
+                "code that was already used or is lower than the live one, a track name that "
+                "does not exist on this app, a release with no version codes, or a listing "
+                "field over its length limit. The message above names the field where Google "
+                "identified one."
+            ),
+            doc_url=DOCS_PLAY_API_ACCESS,
+            details={"service_account": email, "status": status},
         )
 
     if status is not None and status >= 500:

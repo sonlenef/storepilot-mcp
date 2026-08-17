@@ -13,8 +13,12 @@ Tools marked **gated** are two-step: call once to get a preview and a
 confirmation token, then call again with identical arguments plus `confirm=true`
 and that token. See [the safety model](#the-safety-model) at the bottom.
 
-**Nothing in this document has been verified against a live store account.** See
-[ROADMAP.md](ROADMAP.md).
+**How much of this is proven:** the read tools have run against real accounts on
+both stores. No write tool has ever executed against a store, no vitals datapoint
+and no Play report CSV has ever come back, and Apple's sales reports returned 403
+for the key they were tried with. Return shapes for those paths are what the code
+produces against fixtures, not what a store has been observed to return. The full
+list is in [ROADMAP.md](ROADMAP.md).
 
 ---
 
@@ -117,9 +121,10 @@ Returns installs and ratings for one calendar month.
 
 **Limitations:**
 
-- **Requires `STOREPILOT_GOOGLE_REPORTS_BUCKET`** plus `Storage Object Viewer`
-  on that bucket. No Play REST API serves this data — it exists only as CSVs in
-  the reports bucket.
+- **Requires `STOREPILOT_GOOGLE_REPORTS_BUCKET`** plus the account-level Play
+  Console permission "View app information and download bulk reports". No Play
+  REST API serves this data — it exists only as CSVs in the reports bucket, and
+  per-app permission grants do not reach it. See [SETUP.md](SETUP.md#step-3--the-reports-bucket-installs-ratings-earnings).
 - Play stats land 3–7 days late, so the current month is always partial and is
   labelled as such.
 - Installs and ratings are fetched independently: if one report is missing the
@@ -137,7 +142,8 @@ breakdown, plus the transaction line count and source object.
 
 **Limitations:**
 
-- Same bucket requirement as `play_get_stats`.
+- Same bucket requirement as `play_get_stats`, plus the account-level "View
+  financial data, orders, and cancellation survey responses" permission.
 - Google publishes a month's earnings around the **5th of the following month**.
   Before then the report does not exist, and this tool says "not published"
   rather than reporting `0`. Those are different facts.
@@ -423,7 +429,7 @@ rollout. Marks which version is editable, i.e. which one metadata changes target
 | `period` | str | — | `YYYY-MM-DD` for DAILY/WEEKLY (WEEKLY must be the Sunday **ending** the week), `YYYY-MM` for MONTHLY, `YYYY` for YEARLY |
 | `frequency` | str | `"DAILY"` | `DAILY`, `WEEKLY`, `MONTHLY`, `YEARLY` |
 | `app` | str \| None | `None` | Omit for the whole account |
-| `end_period` | str \| None | `None` | DAILY only; reads every day inclusive, **capped at 31 days** |
+| `end_period` | str \| None | `None` | DAILY **and** `report_type="SALES"` only; reads every day inclusive, **capped at 31 days** |
 | `report_type` | str | `"SALES"` | `SALES`, `SUBSCRIPTION`, `SUBSCRIPTION_EVENT`, `PRE_ORDER` |
 
 Units and developer proceeds.
@@ -436,7 +442,8 @@ Units and developer proceeds.
   are cached — **past periods forever**, since Apple never rewrites them.
   Re-reading a range you already pulled is free.
 - For a long span prefer `frequency="MONTHLY"` with a single period over dozens
-  of daily requests. `end_period` with a non-DAILY frequency is rejected.
+  of daily requests. `end_period` is rejected with a non-DAILY frequency, and
+  with any `report_type` other than `SALES`.
 - Revenue is computed as units × per-unit proceeds. Summing Apple's proceeds
   column directly reports one unit's earnings as the total.
 
@@ -517,7 +524,7 @@ submission time, which costs a full review cycle.
 | Argument | Type | Default | Notes |
 |---|---|---|---|
 | `app` | str | — | |
-| `platform` | str | `"IOS"` | `IOS`, `MAC_OS`, `TV_OS`, `VISION_OS` |
+| `platform` | str | `"IOS"` | `IOS`, `MAC_OS`, `TV_OS` |
 | `phased_release` | bool | `True` | Apple's 7-day ladder: 1%, 2%, 5%, 10%, 20%, 50%, 100% |
 | `skip_precheck` | bool | `False` | Submit despite precheck problems |
 | `confirm` | bool | `False` | |
@@ -604,7 +611,7 @@ table therefore describes what each store returned, not each store's rating.
 | Argument | Type | Default | Notes |
 |---|---|---|---|
 | `app` | str | `""` | Empty checks every paired app |
-| `locale` | str | `""` | Spelled as **Play** spells it (`"en-US"`, `"vi"`); the Apple equivalent is derived |
+| `locale` | str | `""` | Spelled as **Play** spells it (`"en-US"`, `"vi"`); the Apple equivalent is derived. Empty uses the app's first registered locale, else `en-US` |
 
 Reports **differences only**: live version, rollout state, and the listing fields
 that exist on both stores (title/name, short description/subtitle, full
@@ -616,9 +623,9 @@ name/subtitle/description/keywords/promotional text. A rejected Apple submission
 costs days.
 
 The stores disagree on some locale codes and the disagreements are not guessable
-— Play's `zh-TW` is Apple's `zh-Hant`, and Play still ships Hebrew as the
-pre-1989 `iw`. The mapping is a table; an unmapped locale is reported rather than
-silently approximated.
+— Play's `zh-TW` is Apple's `zh-Hant`, and Play still ships Hebrew under the
+pre-1989 code as `iw-IL` where Apple uses `he`. The mapping is a table; an
+unmapped locale is reported rather than silently approximated.
 
 ### `release_both(...)` — gated
 
@@ -668,13 +675,21 @@ either direction:
 <base>/metadata/android/<locale>/title.txt              (fastlane supply)
                                  short_description.txt
                                  full_description.txt
+                                 video.txt
                                  changelogs/<versionCode>.txt
 <base>/metadata/ios/<locale>/name.txt                   (fastlane deliver)
                              subtitle.txt
                              description.txt
                              keywords.txt
+                             promotional_text.txt
                              release_notes.txt
+                             marketing_url.txt
+                             support_url.txt
+                             privacy_url.txt
 ```
+
+A file is written only when the store returned a value for that field, so a
+listing with no promo video produces no `video.txt`.
 
 One deliberate deviation, called out because it is the only one: `deliver`
 defaults to `fastlane/metadata/<locale>` with no platform segment, because it

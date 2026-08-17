@@ -4,9 +4,10 @@ StorePilot is not the first MCP server for these APIs, and it is not a fastlane
 replacement. This page is specific about what the alternatives do better and
 about the narrow band where StorePilot is currently the only option.
 
-Repository data below was read from the GitHub API on **16 August 2026**. Star
-counts are a popularity proxy, not a quality measure, and they move. Verify
-before relying on them.
+Repository data below was read from the GitHub API on **17 August 2026**, and the
+tool counts from each project's own README on the same day. Star counts are a
+popularity proxy, not a quality measure, and they move. Verify before relying on
+them.
 
 ---
 
@@ -19,7 +20,7 @@ before relying on them.
 | [antoniolg/play-store-mcp](https://github.com/antoniolg/play-store-mcp) | 155 | 2025-10-03 | Google Play | MCP server, 3 deploy-focused tools |
 | [appreply-co/mcp-appstore](https://github.com/appreply-co/mcp-appstore) | 67 | 2026-08-03 | Both (public data) | ASO research over public store listings |
 | [erayendes/app-store-connect-mcp](https://github.com/erayendes/app-store-connect-mcp) ("Heimdall") | 46 | 2026-08-13 | App Store | 883 tools generated from Apple's OpenAPI spec, 13 profiles |
-| [mikusnuz/app-publish-mcp](https://github.com/mikusnuz/app-publish-mcp) | 26 | 2026-08-06 | **Both** | 91 tools across ASC + Play Console |
+| [mikusnuz/app-publish-mcp](https://github.com/mikusnuz/app-publish-mcp) | 26 | 2026-08-06 | **Both** | 115 tools across ASC + Play Console |
 | **StorePilot** | — | — | **Both** | 34 portfolio-shaped tools |
 
 Two clarifications, because they are easy to get wrong:
@@ -40,8 +41,9 @@ Each of these is checkable against the source of both projects.
 
 Those figures have no Play REST API. They exist only as UTF-16 CSVs in a private
 Cloud Storage bucket that Google writes for your developer account. Reading them
-means a third OAuth scope, a separate IAM grant on the bucket, and a CSV parser
-that resolves columns by name because the headers change without notice.
+means a third OAuth scope, an account-level Play Console permission that is
+separate from every per-app grant, and a CSV parser that resolves columns by name
+because the headers change without notice.
 
 None of the servers above read that bucket, so "how much did this app earn last
 month?" is unanswerable in them. It is the single largest capability gap.
@@ -86,8 +88,9 @@ ones, and adjusts a parameter between preview and confirmation. See
 
 ### `setup_doctor`
 
-Credential setup spans Google Cloud, Play Console, a GCS IAM grant and App Store
-Connect, and several of its failures are silent — most importantly Play's
+Credential setup spans Google Cloud, two separate tabs of Play Console
+permissions and App Store Connect, and several of its failures are silent — most
+importantly Play's
 `reviews.list` returning HTTP 200 and an empty list when the "Reply to reviews"
 permission is missing. Every project here documents its setup in a README;
 StorePilot also diagnoses it at runtime and prints the specific fix per step.
@@ -102,9 +105,9 @@ more than most.
 ### Heimdall — Apple API breadth
 
 883 tools generated from Apple's official OpenAPI spec, organised into 13
-narrowable profiles, covering subscriptions and pricing, Game Center, Xcode
-Cloud, provisioning, webhooks, and sales and finance reports. StorePilot exposes
-10 Apple tools.
+profiles and 32 sub-profiles you can narrow to, covering subscriptions and
+pricing, Game Center, Xcode Cloud, provisioning, webhooks, and sales and finance
+reports. StorePilot exposes 10 Apple tools.
 
 If your work is deep inside App Store Connect — subscription price matrices,
 offer codes, Xcode Cloud — Heimdall covers surface StorePilot does not, and its
@@ -114,10 +117,10 @@ macOS Keychain.
 
 ### app-publish-mcp — publishing surface
 
-91 tools including in-app purchases and subscriptions on both stores, screenshot
-set creation and upload, certificates, provisioning profiles and device
-registration, TestFlight tester and beta-group management, age ratings, and
-pricing.
+115 tools — 70 App Store Connect, 45 Google Play — including in-app purchases and
+subscriptions on both stores, screenshot set creation and upload, certificates,
+provisioning profiles and device registration, TestFlight tester and beta-group
+management, age ratings, and pricing.
 
 StorePilot does **none** of that. If you need to upload screenshots or manage
 IAPs conversationally, this is the server that does it today.
@@ -158,7 +161,7 @@ StorePilot does not compete with it and is not trying to replace it.
 | Installs / earnings | Not its job | Primary capability |
 | Android Vitals | Not its job | Primary capability |
 | "Which app is in trouble?" | Not its job | Primary capability |
-| Maturity | Years of production use | Not yet run against a live account |
+| Maturity | Years of production use | Read paths run live once; no write ever has |
 
 The two answer different questions. fastlane answers "build and ship this commit,
 reproducibly, without a human." StorePilot answers "how is the portfolio doing,
@@ -189,14 +192,16 @@ is for the questions that pipeline does not answer.
 
 Honestly:
 
-- **You need it to work today, with certainty.** Nothing here has run against a
-  live store account. Use fastlane or a mature server, and file bugs here.
+- **You need it to work today, with certainty.** The read tools have run against
+  real accounts on both stores; no write ever has, and neither the earnings
+  parser nor the vitals thresholds have seen real data. Use fastlane or a mature
+  server, and file bugs here.
 - **You have one app.** The portfolio tools are the point, and one app does not
   need them.
 - **You need IAPs, subscriptions, pricing, screenshots or certificates.** Not
   implemented. `app-publish-mcp` or Heimdall.
-- **You need deep App Store Connect surface.** Heimdall exposes ~25x more Apple
-  endpoints.
+- **You need deep App Store Connect surface.** Heimdall exposes 883 Apple tools
+  to StorePilot's 10.
 - **You want a GUI.** `blitz-mac`.
 
 Corrections to anything on this page are welcome as issues — particularly from

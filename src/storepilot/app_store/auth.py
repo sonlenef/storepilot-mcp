@@ -23,6 +23,7 @@ Notifications, DeviceCheck) all fail here, and each gets a distinct remedy —
 
 from __future__ import annotations
 
+import re
 import threading
 import time
 import uuid
@@ -60,11 +61,19 @@ _ALGORITHM = "ES256"
 #: Apple's marker for "this key is scoped to a single app and the token must
 #: carry a ``bid`` (bundle id) claim". Surfaced as a distinct remedy because no
 #: amount of retrying fixes it.
+#:
+#: Matched on WORD boundaries, not as substrings: "bid" is a substring of
+#: "forbidden", which Apple uses in ordinary 401/403 prose, and that match sent
+#: users chasing an individual-key problem they do not have.
 _BID_REQUIRED_MARKERS = (
     "bid",
     "bundle id",
     "bundleid",
     "individual",
+)
+
+_BID_REQUIRED_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(marker) for marker in _BID_REQUIRED_MARKERS) + r")\b"
 )
 
 
@@ -437,7 +446,7 @@ def rejected_token_error(detail: str, *, context: str) -> CredentialsError:
     rejection — so this always terminates the request rather than backing off.
     """
     lowered = detail.lower()
-    if any(marker in lowered for marker in _BID_REQUIRED_MARKERS):
+    if _BID_REQUIRED_RE.search(lowered):
         return CredentialsError(
             f"App Store Connect rejected the token while {context}: it requires a bundle-id "
             f"('bid') claim.",

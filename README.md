@@ -14,8 +14,13 @@ Ask your assistant:
 >
 > "Ship 3.2.1 to the Play internal track and TestFlight."
 
-It answers those in one call each, for every app you own, because the tools are
-portfolio-shaped rather than endpoint-shaped.
+Each question above is one tool call covering every app you own, because the
+tools are portfolio-shaped rather than endpoint-shaped. The last one is two, on
+purpose: writes preview first and wait for a human.
+
+You need your own developer accounts — a Google Play service account, an App
+Store Connect API key, or both. StorePilot reads your accounts; it does not
+scrape public store listings.
 
 > **Status: early.** The read tools have run against real accounts on both
 > stores; the money and crash-threshold paths have not returned real data yet,
@@ -30,13 +35,13 @@ portfolio-shaped rather than endpoint-shaped.
 Play Developer Reporting API and the private Cloud Storage reports bucket; the
 App Store via App Store Connect. 34 tools total, named consistently.
 
-**Money and installs at all.** Play installs, ratings and earnings have no REST
-API. They exist only as UTF-16 CSVs in a private GCS bucket, so most tooling
-skips them and "how much did this app earn?" simply cannot be answered. StorePilot
-reads that bucket, resolves CSV columns by name rather than position, and reports
-earnings per currency without ever summing across currencies. (This path is
-implemented and fixture-tested but has not yet read a real report — see
-[Status](#status-and-honest-limits).)
+**Installs and earnings, which most tooling cannot reach.** Play installs,
+ratings and earnings have no REST API. They exist only as UTF-16 CSVs in a
+private Cloud Storage bucket, so most tooling skips them and "how much did this
+app earn?" simply cannot be answered. StorePilot reads that bucket, resolves CSV
+columns by name rather than position, and reports earnings per currency without
+ever summing across currencies. (This path is implemented and fixture-tested but
+has not yet read a real report — see [Status](#status-and-honest-limits).)
 
 **Portfolio-first.** `portfolio_overview` renders every app on both stores in
 one table. `play_portfolio_health` scans an entire Play account. Neither takes a
@@ -56,12 +61,6 @@ minutes. Production releases are forced into a staged rollout capped at 20%.
 Console + App Store Connect maze with several silent failure modes. One tool
 checks every step and prints the exact fix.
 
-<!-- TODO(demo): GIF of portfolio_overview rendering a real multi-app portfolio,
-     recorded once live credentials are available. -->
-
-<!-- TODO(demo): GIF of release_both — preview block, human approval, both
-     stores landing. Recorded from the same session. -->
-
 ---
 
 ## Install
@@ -71,8 +70,11 @@ Requires Python 3.11+.
 ```bash
 git clone https://github.com/sonlenef/storepilot-mcp
 cd storepilot-mcp
-python -m venv .venv && .venv/bin/pip install -e .
+python3 -m venv .venv && .venv/bin/pip install -e .
 ```
+
+That puts the server binary at `.venv/bin/storepilot`. Every client config below
+wants the absolute path to it.
 
 Not yet on PyPI, so `pip install storepilot` does not work yet.
 
@@ -130,9 +132,13 @@ env = { STOREPILOT_ASC_KEY_PATH = "/path/to/AuthKey_XXXXXXXXXX.p8" }
 ```
 
 Configure only the store you use. Each adapter registers its tools independently,
-and the cross-store tools register as soon as either store is configured.
-`.env` in the project directory works too — see [`.env.example`](.env.example)
-for every variable the code reads.
+and the cross-store tools register as soon as either store is configured. See
+[`.env.example`](.env.example) for every variable the code reads.
+
+A `.env` file also works, but it is read from the process working directory —
+which is whatever directory your MCP client happened to launch the server from,
+not the repo. Use it when you run `storepilot` yourself from the checkout; use
+the client's `env` block otherwise.
 
 Credentials are read from the environment and never written anywhere by
 StorePilot. Keep the service account JSON and the `.p8` outside the repo, and
@@ -203,7 +209,7 @@ Full walkthrough for both stores: **[docs/SETUP.md](docs/SETUP.md)**.
 | Tool | What it answers |
 |---|---|
 | `play_list_apps` | Which packages can this install reach? |
-| `play_get_vitals` | Crash and ANR rates vs Google's 1.09% / 0.47% thresholds |
+| `play_get_vitals` | Crash and ANR (Application Not Responding) rates vs Google's 1.09% / 0.47% thresholds |
 | `play_get_anomalies` | What did Google's own anomaly detection flag? |
 | `play_get_stats` | Installs and ratings for a month (GCS bucket) |
 | `play_get_earnings` | Earnings for a month, per currency (GCS bucket) |
@@ -320,7 +326,10 @@ recommend.
   return `1.09` or `0.0109`? A mismatch makes every verdict wrong by 100x.
 - **No report CSV has ever been read.** Installs, ratings and earnings all come
   from the GCS bucket, and the parser has only ever seen fixtures. Google changed
-  the earnings columns in July 2026, so the real headers are the risk.
+  the earnings report's Fee Description column in [July 2026][play-reports], so
+  the real headers are the risk.
+
+[play-reports]: https://support.google.com/googleplay/android-developer/answer/6135870
 - **No write has ever executed.** Every guard, preview and rollout policy is
   proven against a fake client and 503 tests, never against a real store.
 - Apple sales reports return 403 for an App Manager key; reading them needs a
@@ -354,7 +363,8 @@ than returning something that looks like an answer:
   leave headroom, so a large portfolio scan takes a few seconds.
 - App Store Connect: ~3,600 requests/hour per key, reported in the
   `x-rate-limit` header, plus an undocumented per-minute ceiling that starts
-  refusing around 300–350. The client paces against both.
+  refusing around 300–350. The client paces against both, holding itself to 240
+  requests a minute and spacing calls out as the hourly budget runs down.
 - Apple's `salesReports` is far scarcer than the rest of the API, so results are
   cached — past periods forever, since Apple never rewrites them.
 
