@@ -1,0 +1,59 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "name": "io.github.sonlenef/storepilot-mcp",
+  "description": "Run a whole app portfolio across Google Play and the App Store: vitals, reviews, installs, earnings, releases and cross-store parity.",
+  "repository": {
+    "url": "https://github.com/sonlenef/storepilot-mcp",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "storepilot",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "STOREPILOT_GOOGLE_CREDENTIALS",
+          "description": "Path to a Google Cloud service account JSON key with Play Console access. Enables the Google Play tools.",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "STOREPILOT_GOOGLE_REPORTS_BUCKET",
+          "description": "Play reports bucket id from Play Console -> Download reports -> Copy Cloud Storage URI. Required for installs, ratings and earnings.",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "STOREPILOT_ASC_KEY_PATH",
+          "description": "Path to the App Store Connect API .p8 private key. Enables the App Store tools.",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "STOREPILOT_ASC_KEY_ID",
+          "description": "App Store Connect API Key ID.",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "STOREPILOT_ASC_ISSUER_ID",
+          "description": "App Store Connect API Issuer ID.",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "STOREPILOT_ASC_VENDOR_NUMBER",
+          "description": "Vendor number from App Store Connect -> Payments and Financial Reports. Required only for sales reports.",
+          "isRequired": false,
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}

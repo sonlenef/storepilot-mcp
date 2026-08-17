@@ -17,10 +17,10 @@ Ask your assistant:
 It answers those in one call each, for every app you own, because the tools are
 portfolio-shaped rather than endpoint-shaped.
 
-> **Status: not yet verified against a live store account.** Every tool is
-> implemented and unit-tested, and nothing has run against real credentials.
-> Treat the first run as the verification. See
-> [Status and honest limits](#status-and-honest-limits).
+> **Status: early.** The read tools have run against real accounts on both
+> stores; the money and crash-threshold paths have not returned real data yet,
+> and no write has ever executed against a store. Read
+> [Status and honest limits](#status-and-honest-limits) before trusting a number.
 
 ---
 
@@ -33,8 +33,10 @@ App Store via App Store Connect. 34 tools total, named consistently.
 **Money and installs at all.** Play installs, ratings and earnings have no REST
 API. They exist only as UTF-16 CSVs in a private GCS bucket, so most tooling
 skips them and "how much did this app earn?" simply cannot be answered. StorePilot
-reads that bucket, resolves CSV columns by name, and reports earnings per
-currency without ever summing across currencies.
+reads that bucket, resolves CSV columns by name rather than position, and reports
+earnings per currency without ever summing across currencies. (This path is
+implemented and fixture-tested but has not yet read a real report — see
+[Status](#status-and-honest-limits).)
 
 **Portfolio-first.** `portfolio_overview` renders every app on both stores in
 one table. `play_portfolio_health` scans an entire Play account. Neither takes a
@@ -67,7 +69,7 @@ checks every step and prints the exact fix.
 Requires Python 3.11+.
 
 ```bash
-git clone https://github.com/<you>/storepilot-mcp
+git clone https://github.com/sonlenef/storepilot-mcp
 cd storepilot-mcp
 python -m venv .venv && .venv/bin/pip install -e .
 ```
@@ -102,10 +104,39 @@ claude mcp add storepilot -- /absolute/path/to/storepilot-mcp/.venv/bin/storepil
 }
 ```
 
+### Cursor
+
+Settings → MCP → Add new MCP server, or add to `~/.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "storepilot": {
+      "command": "/absolute/path/to/storepilot-mcp/.venv/bin/storepilot",
+      "env": { "STOREPILOT_ASC_KEY_PATH": "/path/to/AuthKey_XXXXXXXXXX.p8" }
+    }
+  }
+}
+```
+
+### Codex CLI
+
+Add to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.storepilot]
+command = "/absolute/path/to/storepilot-mcp/.venv/bin/storepilot"
+env = { STOREPILOT_ASC_KEY_PATH = "/path/to/AuthKey_XXXXXXXXXX.p8" }
+```
+
 Configure only the store you use. Each adapter registers its tools independently,
 and the cross-store tools register as soon as either store is configured.
 `.env` in the project directory works too — see [`.env.example`](.env.example)
 for every variable the code reads.
+
+Credentials are read from the environment and never written anywhere by
+StorePilot. Keep the service account JSON and the `.p8` outside the repo, and
+`chmod 600` both — they are private keys.
 
 ---
 
@@ -269,20 +300,35 @@ users because the other store returned an API error is worse than the drift.
 
 ## Status and honest limits
 
-**Nothing here has run against a live store account.** The code is complete and
-unit-tested; the assumptions it makes about real API responses have not been
-checked against real API responses. The highest-risk unknowns:
+StorePilot has been run against real accounts on both stores, read-only. That
+first run found three bugs, all fixed: Apple rejects `sort` on the
+appStoreVersions endpoint, the Play reports bucket is not always named
+`pubsite_prod_rev_*`, and bucket access is an account-level Play Console
+permission rather than the Cloud Console IAM grant the error message used to
+recommend.
 
-- Do the Reporting API's rate metrics come back as percentages (`1.09`) or
-  fractions (`0.0109`)? A mismatch makes every threshold verdict wrong by 100x.
-- Does deleting a dry-run edit truly discard the uploaded bundle without
-  consuming the version code? The truthful-preview strategy rests on it.
-- Real GCS object names under the earnings prefix, and real CSV column headers.
-- Resumable upload of a multi-hundred-MB AAB, including mid-upload 5xx handling.
+**Verified live** — service-account and ES256 JWT auth, rate-limit pacing,
+`setup_doctor` on both stores, the Play and App Store read tools, and
+`portfolio_overview` rendering six apps across both stores in one table.
+
+**Not yet verified, and two of them carry headline claims:**
+
+- **No vitals datapoint has ever come back.** Android Vitals suppresses metrics
+  below a minimum daily user count, and the test account's apps are under it. So
+  the threshold comparison — the thing `play_get_vitals` exists for — has never
+  run on real numbers, and the open question stands: does the Reporting API
+  return `1.09` or `0.0109`? A mismatch makes every verdict wrong by 100x.
+- **No report CSV has ever been read.** Installs, ratings and earnings all come
+  from the GCS bucket, and the parser has only ever seen fixtures. Google changed
+  the earnings columns in July 2026, so the real headers are the risk.
+- **No write has ever executed.** Every guard, preview and rollout policy is
+  proven against a fake client and 503 tests, never against a real store.
+- Apple sales reports return 403 for an App Manager key; reading them needs a
+  key with finance access.
 
 The full list is in [docs/ROADMAP.md](docs/ROADMAP.md). If you run StorePilot
-against a real account, those items are the most valuable bug reports you can
-file.
+against a real account — especially one with an app large enough to report
+vitals — those items are the most valuable bug reports you can file.
 
 ### Hard limits, imposed by the stores
 
@@ -328,6 +374,15 @@ where StorePilot is the only option.
 - [docs/COMPARISON.md](docs/COMPARISON.md) — alternatives, and fastlane
 - [docs/ROADMAP.md](docs/ROADMAP.md) — state and the live-verification backlog
 - [docs/SECURITY.md](docs/SECURITY.md) — credential handling and the threat model
+- [CONTRIBUTING.md](CONTRIBUTING.md) — setup, ground rules, and what actually helps
+- [CHANGELOG.md](CHANGELOG.md) — what shipped, and what the live runs fixed
+
+## Contributing
+
+The most useful contribution is running StorePilot against a real store account
+and reporting what breaks — particularly an account with an app large enough that
+Android Vitals reports data, which the test account was not. See
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

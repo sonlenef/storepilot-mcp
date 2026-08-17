@@ -12,6 +12,7 @@ from typing import Any, Literal
 from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
 
+from storepilot import __version__
 from storepilot.config import settings
 from storepilot.core.errors import (
     DOCS_PLAY_DOWNLOAD_REPORTS,
@@ -21,7 +22,7 @@ from storepilot.core.errors import (
     StorePilotError,
 )
 
-mcp = MCPServer("storepilot")
+mcp = MCPServer("storepilot", version=__version__)
 
 READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False)
 

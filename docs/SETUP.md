@@ -16,7 +16,7 @@ on its own, and the cross-store tools register as soon as either store works.
 ## Before you start
 
 ```bash
-git clone https://github.com/<you>/storepilot-mcp
+git clone https://github.com/sonlenef/storepilot-mcp
 cd storepilot-mcp
 python -m venv .venv && .venv/bin/pip install -e .
 cp .env.example .env
