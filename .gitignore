@@ -1,0 +1,21 @@
+# Credentials — never commit
+.env
+*.json.key
+service-account*.json
+AuthKey_*.p8
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
